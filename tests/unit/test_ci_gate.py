@@ -199,3 +199,76 @@ def test_gate_fails_on_any_non_success_result(jobs):
         "fail-open shape this repository has been removing elsewhere"
     )
     assert "exit 1" in script, "the gate must actually fail the job"
+
+
+# ── Check names must be distinct ─────────────────────────────────────────────
+#
+# Branch protection addresses a check by name, and so does anyone reading the
+# checks list on a pull request. A matrix job whose `name:` does not mention
+# every dimension produces several check runs sharing one name: this workflow
+# reported three runs called "Test (Python 3.10)" until the `os` dimension was
+# added to the template. That is not cosmetic -- a required rule naming that
+# check cannot say which of the three it means, and a Windows-only failure is
+# indistinguishable from the other two legs without opening the run.
+
+import itertools
+import re
+
+# `include` and `exclude` shape a matrix but are not dimensions of it, so they
+# are not part of the cartesian product.
+_NOT_A_DIMENSION = {"include", "exclude"}
+
+
+def _expanded_names(job_name, matrix):
+    """Every check name this job produces, one per matrix combination."""
+    dimensions = {k: v for k, v in matrix.items()
+                  if k not in _NOT_A_DIMENSION and isinstance(v, list)}
+    if not dimensions:
+        return [job_name]
+
+    keys = list(dimensions)
+    names = []
+    for combo in itertools.product(*(dimensions[k] for k in keys)):
+        name = job_name
+        for key, value in zip(keys, combo):
+            name = name.replace("${{ matrix.%s }}" % key, str(value))
+            name = name.replace("${{matrix.%s}}" % key, str(value))
+        names.append(name)
+    return names
+
+
+def _all_check_names(jobs):
+    names = []
+    for job_id, job in jobs.items():
+        job_name = job.get("name", job_id)
+        matrix = job.get("strategy", {}).get("matrix", {})
+        names.extend(_expanded_names(job_name, matrix or {}))
+    return names
+
+
+def test_every_check_name_is_unique(jobs):
+    names = _all_check_names(jobs)
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    assert not duplicates, (
+        f"these check names are produced more than once: {duplicates}. "
+        f"A name that maps to several check runs cannot be required, and cannot "
+        f"be read -- add the missing matrix dimension to the job's `name:`."
+    )
+
+
+def test_a_matrix_job_names_every_dimension_it_varies(jobs):
+    """The rule behind the test above, stated where it will be read."""
+    for job_id, job in jobs.items():
+        matrix = job.get("strategy", {}).get("matrix", {}) or {}
+        dimensions = [k for k, v in matrix.items()
+                      if k not in _NOT_A_DIMENSION
+                      and isinstance(v, list) and len(v) > 1]
+        if not dimensions:
+            continue
+        name = job.get("name", job_id)
+        missing = [k for k in dimensions
+                   if not re.search(r"\$\{\{\s*matrix\.%s\s*\}\}" % re.escape(k), name)]
+        assert not missing, (
+            f"job {job_id!r} varies {missing} but its `name:` does not mention "
+            f"them, so its legs share a check name"
+        )

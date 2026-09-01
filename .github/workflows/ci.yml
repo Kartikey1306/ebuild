@@ -19,7 +19,13 @@ concurrency:
 jobs:
   # ── Test Matrix ───────────────────────────────────────────────────────────
   test:
-    name: Test (Python ${{ matrix.python-version }})
+    # Both matrix dimensions belong in the name. With only the Python
+    # version here, the ubuntu, macOS and Windows legs all reported under
+    # one check name -- three check runs called "Test (Python 3.10)" --
+    # so a Windows-only failure was indistinguishable from the other two
+    # until you opened it, and no branch protection rule could name one
+    # leg without naming all three.
+    name: Test (Python ${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
