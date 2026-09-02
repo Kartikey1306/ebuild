@@ -35,7 +35,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-13, macos-14]
+        # macos-13 is retired: jobs requesting it are never assigned a runner
+        # and sit queued until GitHub kills them at 24h. Every release run this
+        # repository has ever had ended that way -- six tags, six 1d failures,
+        # with Publish to PyPI skipped each time because it needs this job.
+        # ci.yml moved off it already; this workflow did not.
+        #
+        # Dropped rather than swapped: macos-14 builds both architectures via
+        # CIBW_ARCHS_MACOS below, so the x86_64 wheels macos-13 existed for are
+        # still produced.
+        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-14]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,10 +52,16 @@ jobs:
           python-version: "3.12"
       - name: Install cibuildwheel
         run: pip install cibuildwheel==2.21.3
+      # shell: bash -- the matrix includes windows-latest, where the default
+      # shell is PowerShell. The `||` fallback and the trailing-backslash
+      # continuations below are bash syntax; under PowerShell the step fails
+      # outright, which is the other half of why no release has published.
       - name: Build wheels
+        shell: bash
         env:
           CIBW_BUILD: "cp310-* cp311-* cp312-*"
           CIBW_SKIP: "*-musllinux_*"
+          CIBW_ARCHS_MACOS: "x86_64 arm64"
         run: |
           python -m cibuildwheel --output-dir wheelhouse || \
             (echo "::warning::cibuildwheel failed (likely no C-extension); building pure-Python wheel" && \
