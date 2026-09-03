@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - "v*.*.*"
+      # -rc.N and friends. .github/STANDARDS.md names -rc.N as the org's only
+      # recognised pre-release suffix, and the release job below handles them
+      # explicitly (--prerelease). Without this pattern no pre-release tag
+      # starts the workflow at all.
+      - "v*.*.*-*"
   # This workflow's only trigger was a version tag, so the first execution of
   # any change to it was a real release -- an uncomfortable place to be for a
   # path whose last 15 runs all failed. workflow_dispatch lets a maintainer
@@ -11,7 +16,6 @@ on:
   # land as artifacts, without spending a tag. The publishing jobs stay gated
   # on a tag push (see their `if:`), so a manual run can never publish.
   workflow_dispatch:
-      - "v*.*.*-*"
 
 permissions:
   contents: write
@@ -51,11 +55,11 @@ jobs:
         # Dropped rather than swapped: macos-14 builds both architectures via
         # macos-14. No per-architecture wheels are lost by that: ebuild is
         # pure Python -- pyproject.toml declares setuptools.build_meta with no
-        # ext-modules, no cmdclass and no setup.py -- so cibuildwheel cannot
-        # complete here at all, every leg falls through to the `|| python -m
-        # build --wheel` below, and all four produce the same
-        # ebuild-X.Y.Z-py3-none-any.whl that download-artifact then merges
-        # back into one. macos-13's wheels were that same universal file.
+        # ext-modules, no cmdclass and no setup.py -- so the Build wheels step
+        # below selects `python -m build` on every leg, and all four produce
+        # the same ebuild-X.Y.Z-py3-none-any.whl that download-artifact then
+        # merges back into one. macos-13's wheels were that same universal
+        # file.
         os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-14]
     steps:
       - uses: actions/checkout@v4
@@ -194,9 +198,21 @@ jobs:
           merge-multiple: true
       - name: Stage dist
         run: |
+          set -euo pipefail
           mkdir -p dist
           find dist -mindepth 1 -delete
-          mv wheelhouse/*.whl dist/ 2>/dev/null || true
+          # `2>/dev/null || true` here meant that if no wheel was downloaded --
+          # every cibuildwheel leg red, the artifact upload skipped, the glob
+          # matching nothing -- dist/ ended up holding the sdist alone and
+          # PyPI was published with no wheels at all, silently. A release that
+          # ships less than it was asked to must fail, not publish.
+          shopt -s nullglob
+          wheels=(wheelhouse/*.whl)
+          if [ ${#wheels[@]} -eq 0 ]; then
+            echo "::error::no wheels were staged; refusing to publish a partial release"
+            exit 1
+          fi
+          mv "${wheels[@]}" dist/
           ls -lh dist/
       - name: Publish to PyPI (trusted publishing)
         uses: pypa/gh-action-pypi-publish@release/v1
