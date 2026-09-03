@@ -231,7 +231,7 @@ def _matches(combo, spec):
     return all(str(combo.get(k)) == str(v) for k, v in spec.items())
 
 
-def _expanded_names(job_name, matrix):
+def _expanded_names(job_name, matrix, has_explicit_name=True):
     """Every check name this job produces, one per matrix combination.
 
     `include` and `exclude` are not dimensions of the product, but ignoring
@@ -272,6 +272,16 @@ def _expanded_names(job_name, matrix):
     if not combos:
         return [job_name]
 
+    # A job with no `name:` gets GitHub's auto-generated one, which already
+    # carries the matrix values -- `smoke (ubuntu-22.04)`, `smoke (macos-
+    # latest)`. Modelling that matters: falling back to the bare job id made
+    # every leg of an unnamed matrix look like the same check name, so this
+    # reported a collision GitHub would never produce and sent the reader
+    # looking for a bug that is not there.
+    if not has_explicit_name:
+        return [f"{job_name} ({', '.join(str(c[k]) for k in sorted(c))})"
+                for c in combos]
+
     return [_substitute(job_name, c) for c in combos]
 
 
@@ -280,7 +290,8 @@ def _all_check_names(jobs):
     for job_id, job in jobs.items():
         job_name = job.get("name", job_id)
         matrix = job.get("strategy", {}).get("matrix", {})
-        names.extend(_expanded_names(job_name, matrix or {}))
+        names.extend(_expanded_names(job_name, matrix or {},
+                                     has_explicit_name="name" in job))
     return names
 
 
@@ -303,7 +314,12 @@ def test_a_matrix_job_names_every_dimension_it_varies(jobs):
                       and isinstance(v, list) and len(v) > 1]
         if not dimensions:
             continue
-        name = job.get("name", job_id)
+        if "name" not in job:
+            # No `name:` means GitHub generates one that already carries the
+            # matrix values, so the rule is satisfied by the default. The rule
+            # is about a `name:` that varies less than the matrix does.
+            continue
+        name = job["name"]
         missing = [k for k in dimensions
                    if not re.search(r"\$\{\{\s*matrix\.%s\s*\}\}" % re.escape(k), name)]
         assert not missing, (
