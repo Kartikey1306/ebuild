@@ -219,22 +219,60 @@ import re
 _NOT_A_DIMENSION = {"include", "exclude"}
 
 
+def _substitute(name, values):
+    for key, value in values.items():
+        name = name.replace("${{ matrix.%s }}" % key, str(value))
+        name = name.replace("${{matrix.%s}}" % key, str(value))
+    return name
+
+
+def _matches(combo, spec):
+    """Does this combination match an `exclude:` entry?"""
+    return all(str(combo.get(k)) == str(v) for k, v in spec.items())
+
+
 def _expanded_names(job_name, matrix):
-    """Every check name this job produces, one per matrix combination."""
+    """Every check name this job produces, one per matrix combination.
+
+    `include` and `exclude` are not dimensions of the product, but ignoring
+    them entirely left a blind spot: a matrix expressed *entirely* through
+    `include:` has no list dimensions at all, so this returned [job_name] --
+    one name for however many legs the job really has. release.yml and
+    eosim-sanity.yml both use that form today, so the blind spot goes live
+    the moment this guard is pointed at them.
+    """
     dimensions = {k: v for k, v in matrix.items()
                   if k not in _NOT_A_DIMENSION and isinstance(v, list)}
-    if not dimensions:
+
+    combos = []
+    if dimensions:
+        keys = list(dimensions)
+        for values in itertools.product(*(dimensions[k] for k in keys)):
+            combos.append(dict(zip(keys, values)))
+
+    # exclude removes combinations rather than being ignored: counting a
+    # combination that never runs could report a duplicate that cannot happen.
+    for spec in matrix.get("exclude", []) or []:
+        if isinstance(spec, dict):
+            combos = [c for c in combos if not _matches(c, spec)]
+
+    # include adds legs. An entry that only refines an existing combination
+    # does not add a name; one that introduces new values does.
+    for spec in matrix.get("include", []) or []:
+        if not isinstance(spec, dict):
+            continue
+        refines = [c for c in combos if _matches(c, {k: v for k, v in spec.items()
+                                                    if k in c})]
+        if refines:
+            for c in refines:
+                c.update(spec)
+        else:
+            combos.append(dict(spec))
+
+    if not combos:
         return [job_name]
 
-    keys = list(dimensions)
-    names = []
-    for combo in itertools.product(*(dimensions[k] for k in keys)):
-        name = job_name
-        for key, value in zip(keys, combo):
-            name = name.replace("${{ matrix.%s }}" % key, str(value))
-            name = name.replace("${{matrix.%s}}" % key, str(value))
-        names.append(name)
-    return names
+    return [_substitute(job_name, c) for c in combos]
 
 
 def _all_check_names(jobs):
