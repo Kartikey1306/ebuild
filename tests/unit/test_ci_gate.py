@@ -305,8 +305,42 @@ def test_every_check_name_is_unique(jobs):
     )
 
 
+def test_check_names_are_unique_across_every_workflow():
+    """Branch protection matches check-run names repo-wide, not per file.
+
+    The per-file test above catches a matrix that collides with itself; this
+    one catches ci.yml colliding with book-build.yml, and a static-named
+    matrix in any workflow (nightly.yml's Full Test Suite was one: three
+    Python legs, one name, invisible to the per-file check because the
+    fixture reads ci.yml only).
+    """
+    names = []
+    for doc in _pr_workflows().values():
+        names.extend(_all_check_names(doc["jobs"]))
+    # nightly.yml is schedule-only, so _pr_workflows() misses it -- but its
+    # names still land in the same namespace branch protection matches on.
+    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        doc = _load(path)
+        if isinstance(doc, dict) and not _runs_on_pull_request(doc):
+            names.extend(_all_check_names(doc.get("jobs", {}) or {}))
+    duplicates = sorted({n for n in names if names.count(n) > 1})
+    assert not duplicates, (
+        f"these check names are produced more than once across the "
+        f"repository's workflows: {duplicates}. A name backed by several "
+        f"check runs cannot be required, whichever files produce them."
+    )
+
+
 def test_a_matrix_job_names_every_dimension_it_varies(jobs):
-    """The rule behind the test above, stated where it will be read."""
+    """The rule behind the test above, stated where it will be read.
+
+    An earlier version of this docstring claimed release.yml and
+    eosim-sanity.yml used the include:-only form and were the live blind
+    spot. Expansion showed neither does -- every matrix job in both names
+    every dimension it varies -- while nightly.yml's full-test-suite was the
+    one real offender in the repository, now fixed. The repo is clean; the
+    cross-file test below is what keeps it that way.
+    """
     for job_id, job in jobs.items():
         matrix = job.get("strategy", {}).get("matrix", {}) or {}
         dimensions = [k for k, v in matrix.items()
