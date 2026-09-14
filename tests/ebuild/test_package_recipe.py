@@ -151,6 +151,12 @@ def test_to_dict_round_trips_every_field():
     assert reloaded == recipe
     assert reloaded.install_args == ["DESTDIR=/tmp/stage"]
 
+    # Key order is not a correctness property -- parse_recipe() reads every
+    # key by name, as recipe.py says -- but it is a stability property: the
+    # cached recipe YAML that index_sync writes is diffed by humans, and this
+    # keeps install_args next to build_args, where index_sync's recipe_dict
+    # puts it. If this fails after a deliberate reordering, update both
+    # emitters together and then this line; it is not a bug in to_dict().
     keys = list(recipe.to_dict())
     assert keys.index("install_args") == keys.index("build_args") + 1
 
