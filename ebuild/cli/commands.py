@@ -40,7 +40,7 @@ from ebuild.core.scheduler import run_graph
 from ebuild.packages.builder import BuildError, PackageBuilder
 from ebuild.packages.cache import PackageCache
 from ebuild.packages.fetcher import FetchError, PackageFetcher
-from ebuild.packages.lockfile import Lockfile
+from ebuild.packages.lockfile import Lockfile, LockfileError
 from ebuild.packages.recipe import RecipeError
 from ebuild.packages.registry import create_registry, find_recipe_dirs
 from ebuild.packages.resolver import PackageResolver, ResolveError
@@ -86,7 +86,12 @@ def _install_packages(
     # newest now. It was only ever written before, which pinned nothing.
     lock_path = cfg.source_dir / Lockfile.FILENAME
     lockfile = Lockfile(lock_path)
-    lockfile.load()
+    try:
+        lockfile.load()
+    except LockfileError as e:
+        # A lock that cannot be read is a resolution the user has to settle,
+        # reported through the handler every caller of this function has.
+        raise ResolveError(str(e)) from e
     if lockfile.package_names:
         log.debug(f"Lockfile read: {lock_path} ({len(lockfile.package_names)} packages)")
 

@@ -268,3 +268,68 @@ def test_load_drops_malformed_entries(tmp_path):
     lock.load()
     assert lock.package_names == ["zlib"]
     assert lock.get_locked_entry("zlib") == {"version": "1.2.13", "checksum": "", "build": "cmake"}
+
+
+def test_the_lock_notices_a_recipe_whose_build_system_changed(tmp_path):
+    """Same version, URL and checksum, different build system: the source
+    bytes reproduce, the installed artifact does not. The lock records
+    ``build``; a field recorded and never compared is the defect the lock
+    itself was."""
+    registry = make_registry_with_checksums(tmp_path, {
+        "zlib.yaml": {"package": "zlib", "version": "1.3.0",
+                      "checksum": "sha256:" + "b" * 64},
+    })
+    (tmp_path / "zlib.yaml").write_text(
+        (tmp_path / "zlib.yaml").read_text(encoding="utf-8") + "build: make\n",
+        encoding="utf-8",
+    )
+    registry = PackageRegistry()
+    registry.add_search_path(tmp_path)
+    registry.scan()
+
+    lock = lock_with(tmp_path, {
+        "zlib": {"version": "1.3.0", "url": "https://example.invalid/zlib.tar.gz",
+                 "checksum": "sha256:" + "b" * 64, "build": "cmake"},
+    })
+    with pytest.raises(ResolveError, match="build 'cmake'"):
+        PackageResolver(registry).resolve([{"name": "zlib"}], lockfile=lock)
+
+    # The control: the lock that records the recipe's real build system resolves.
+    lock._entries["zlib"]["build"] = "make"
+    assert versions_of(PackageResolver(registry).resolve([{"name": "zlib"}], lockfile=lock))["zlib"] == "1.3.0"
+
+
+def test_every_field_the_lock_records_is_one_the_resolver_compares(tmp_path):
+    """lock() and the resolver's check are two lists of the same thing; this
+    keeps them from drifting apart again. ``version`` is the lookup key, not
+    a compared field."""
+    from ebuild.packages.recipe import PackageRecipe
+
+    recipe = PackageRecipe(name="zlib", version="1.3.0", url="https://example.invalid/z.tgz",
+                           checksum="sha256:" + "a" * 64, build_system="cmake")
+    lock = Lockfile(tmp_path / "ebuild.lock")
+    lock.lock([recipe])
+    recorded = set(lock.get_locked_entry("zlib")) - {"version"}
+    checked = {field for field, _attr in Lockfile.CHECKED_FIELDS}
+    assert recorded == checked, (recorded, checked)
+    for _field, attr in Lockfile.CHECKED_FIELDS:
+        assert hasattr(recipe, attr), attr
+
+
+def test_load_refuses_a_lock_that_is_not_yaml(tmp_path):
+    """A corrupt lock is a condition to report, not a traceback to print."""
+    from ebuild.packages.lockfile import LockfileError
+
+    path = tmp_path / "ebuild.lock"
+    path.write_text("lockfile_version: 1\npackages:\n  zlib: {version: '1.2.13\n", encoding="utf-8")
+    with pytest.raises(LockfileError, match="not valid YAML"):
+        Lockfile(path).load()
+
+
+def test_load_refuses_a_lock_it_cannot_open(tmp_path):
+    from ebuild.packages.lockfile import LockfileError
+
+    path = tmp_path / "ebuild.lock"
+    path.mkdir()   # exists, so load() does not return early; open() fails
+    with pytest.raises(LockfileError, match="could not be read"):
+        Lockfile(path).load()

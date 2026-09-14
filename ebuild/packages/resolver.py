@@ -183,19 +183,21 @@ class PackageResolver:
     def _check_locked_bytes(
         name: str, entry: Dict[str, str], recipe: PackageRecipe
     ) -> None:
-        """The locked version must still mean the same archive.
+        """The locked version must still mean the same artifact.
 
         A recipe can be edited to keep its version and change its URL or
         checksum; the version alone would then reproduce the name, not the
-        bytes. Only fields the lock recorded are compared.
+        bytes. The build system is part of what turns those bytes into the
+        installed artifact, so it is held to the same rule. Only fields the
+        lock recorded are compared.
         """
-        for field in ("url", "checksum"):
+        for field, attr in Lockfile.CHECKED_FIELDS:
             locked_value = entry.get(field)
-            if locked_value and locked_value != getattr(recipe, field):
+            if locked_value and locked_value != getattr(recipe, attr):
                 raise ResolveError(
                     f"{Lockfile.FILENAME} pins '{name}' v{recipe.version} with "
                     f"{field} '{locked_value}', but the recipe for that version "
-                    f"now has '{getattr(recipe, field)}'. The lock exists to "
+                    f"now has '{getattr(recipe, attr)}'. The lock exists to "
                     f"notice this; if the change is intended, delete "
                     f"{Lockfile.FILENAME} or pin the version explicitly."
                 )
