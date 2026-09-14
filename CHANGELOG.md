@@ -33,10 +33,15 @@
   (the correction #109 made there is filed upstream as embeddedos-org/eos#149).
   The OSSF Scorecard action moved to the ghcr.io-hosted release and is pinned
   by commit. yamllint on the Windows legs: YAML is pinned to LF in
-  `.gitattributes`, so an existing Windows clone needs one
-  `git add --renormalize .` (`ebuild/packages/recipe.py`,
-  `ebuild/packages/index_sync.py`, `.github/workflows/scorecard.yml`,
-  `.gitattributes`).
+  `.gitattributes`, so an existing Windows clone needs its files checked out
+  again once (`git rm --cached -r . && git reset --hard HEAD`, or a re-clone;
+  see CONTRIBUTING.md). On Python 3.10 and 3.11 `ebuild/plugins/__init__.py`
+  now type-checks: the `entry_points()` fallback is spelled out with a cast
+  instead of a `# type: ignore` naming the wrong error code.
+  (`ebuild/packages/recipe.py`, `ebuild/packages/index_sync.py`,
+  `ebuild/plugins/__init__.py`, `core/eos/docs/three-way-alignment.md`,
+  `.github/workflows/scorecard.yml`, `.gitattributes`, `.yamllint.yml`, and
+  the three lint-fixed test files.)
 - **`ebuild test` now finds Windows test binaries.** The Ninja edge for a
   native `type: test` target already carried the platform suffix
   (`_exe_suffix()` names it `<name>.exe` on Windows), but `ebuild test`

@@ -22,9 +22,11 @@ This certifies you have the right to submit the code under the MIT license.
 
 **Windows contributors:** `.gitattributes` pins `*.yml` and `*.yaml` to LF so
 yamllint sees the same bytes on every platform. The attribute governs future
-checkouts and commits, not files already sitting in a working tree, so after
-pulling that change run `git add --renormalize .` once (or re-clone);
-otherwise yamllint will still see CRLF locally.
+checkouts, not files already sitting in a working tree, and `git add
+--renormalize .` rewrites only the index, never the files. After pulling that
+change, from a clean tree run `git rm --cached -r . && git reset --hard HEAD`
+once (or re-clone) so the YAML files are checked out again as LF; otherwise
+yamllint will still see CRLF locally.
 
 ## Coding Standards
 

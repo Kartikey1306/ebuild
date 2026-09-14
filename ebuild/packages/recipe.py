@@ -104,9 +104,10 @@ class PackageRecipe:
             data["checksum"] = self.checksum
         data["build"] = self.build_system
         # Copies, not the live lists: a caller that appends to what it got
-        # back must not edit the recipe behind its back. Field order follows
-        # parse_recipe(); install_args sits after build_args so a dump and a
-        # reload agree field for field.
+        # back must not edit the recipe behind its back. The key order is the
+        # one index_sync's recipe_dict uses, with install_args after
+        # build_args; parse_recipe() reads every key by name, so a dump and a
+        # reload agree field for field regardless of order.
         if self.dependencies:
             data["dependencies"] = list(self.dependencies)
         if self.configure_args:
