@@ -103,14 +103,20 @@ class PackageRecipe:
         if self.checksum:
             data["checksum"] = self.checksum
         data["build"] = self.build_system
+        # Copies, not the live lists: a caller that appends to what it got
+        # back must not edit the recipe behind its back. Field order follows
+        # parse_recipe(); install_args sits after build_args so a dump and a
+        # reload agree field for field.
         if self.dependencies:
-            data["dependencies"] = self.dependencies
+            data["dependencies"] = list(self.dependencies)
         if self.configure_args:
-            data["configure_args"] = self.configure_args
+            data["configure_args"] = list(self.configure_args)
         if self.build_args:
-            data["build_args"] = self.build_args
+            data["build_args"] = list(self.build_args)
+        if self.install_args:
+            data["install_args"] = list(self.install_args)
         if self.patches:
-            data["patches"] = self.patches
+            data["patches"] = list(self.patches)
         return data
 
 
