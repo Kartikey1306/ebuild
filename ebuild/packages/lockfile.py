@@ -47,7 +47,13 @@ class Lockfile:
 
         packages = raw.get("packages", {})
         if isinstance(packages, dict):
-            self._entries = packages
+            # Keep only well-formed entries; a hand-edited or truncated file
+            # must not turn into a KeyError deep inside the resolver.
+            self._entries = {
+                str(name): {str(k): str(v) for k, v in entry.items() if v is not None}
+                for name, entry in packages.items()
+                if isinstance(entry, dict)
+            }
 
     def save(self) -> None:
         """Write the lockfile to disk."""

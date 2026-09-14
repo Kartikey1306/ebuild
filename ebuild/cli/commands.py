@@ -81,15 +81,20 @@ def _install_packages(
     registry = create_registry(*recipe_dirs)
     log.debug(f"Registry: {registry.package_count} recipes from {[str(p) for p in registry.search_paths]}")
 
-    resolver = PackageResolver(registry)
-    requested = [{"name": p.name, "version": p.version} for p in cfg.packages]
-    resolved = resolver.resolve(requested)
-
-    log.info(f"Packages to install: {', '.join(r.name + ' v' + r.version for r in resolved)}")
-
-    # Lockfile
+    # The lockfile is read before resolving, so an unpinned package lands on
+    # the version the last resolution recorded rather than on whatever is
+    # newest now. It was only ever written before, which pinned nothing.
     lock_path = cfg.source_dir / Lockfile.FILENAME
     lockfile = Lockfile(lock_path)
+    lockfile.load()
+    if lockfile.package_names:
+        log.debug(f"Lockfile read: {lock_path} ({len(lockfile.package_names)} packages)")
+
+    resolver = PackageResolver(registry)
+    requested = [{"name": p.name, "version": p.version} for p in cfg.packages]
+    resolved = resolver.resolve(requested, lockfile=lockfile)
+
+    log.info(f"Packages to install: {', '.join(r.name + ' v' + r.version for r in resolved)}")
 
     # Cache and fetcher
     pkg_cache_dir = build_dir / "packages"

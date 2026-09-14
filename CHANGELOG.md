@@ -22,6 +22,7 @@
   `cjson` (v1.7.18), `nanopb` (v0.4.9.1), `lvgl` (v9.2.2), `tinyusb` (v0.18.0), and `unity` (v2.6.1).
 
 ### Fixed
+- **`ebuild.lock` is read, not only written.** `_install_packages` created the `Lockfile` after resolution and only ever saved it, and nothing called `Lockfile.load()`, so the lock pinned nothing: an unpinned package resolved to the newest recipe on every machine and every run, and a stale `ebuild.lock` sat beside it claiming otherwise. The lock is now loaded before resolving and handed to `PackageResolver.resolve(requested, lockfile=...)`, which uses it as a pin for every package the request leaves open. Precedence is request, then lock, then newest. A locked version no recipe provides is an error (`ebuild.lock pins 'zlib' at v9.9.9 ...`), not a silent fallback, and a locked entry whose recorded URL or checksum no longer matches the recipe of that version is refused -- the version reproduces the name, the lock exists to reproduce the bytes. An explicit request outranks the lock and the lock is rewritten from the result, as before. `Lockfile.load()` drops malformed entries instead of failing later. (`ebuild/packages/resolver.py`, `ebuild/packages/lockfile.py`, `ebuild/cli/commands.py`)
 - **CI on master runs to completion again.** ruff stopped the pipeline at its
   first step on findings the merges had introduced (an F811 duplicate import,
   W292, E402). `PackageRecipe.to_dict()` -- defined by #111, deleted by #112's
