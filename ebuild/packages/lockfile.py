@@ -61,7 +61,12 @@ class Lockfile:
         try:
             with open(self.lock_path, "r", encoding="utf-8") as f:
                 raw = yaml.safe_load(f)
-        except yaml.YAMLError as e:
+        except (yaml.YAMLError, UnicodeDecodeError) as e:
+            # A lock that is not UTF-8 (a foreign editor, a bad binary merge)
+            # fails in the codec, not the parser, and UnicodeDecodeError is a
+            # ValueError -- neither a YAMLError nor an OSError. Same message:
+            # the file is not something this tool wrote, and the remedy is
+            # the same.
             raise LockfileError(
                 f"{self.lock_path} is not valid YAML: {e}. "
                 f"Fix it, or delete it to resolve afresh."

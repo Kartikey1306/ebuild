@@ -275,7 +275,9 @@ def test_the_lock_notices_a_recipe_whose_build_system_changed(tmp_path):
     bytes reproduce, the installed artifact does not. The lock records
     ``build``; a field recorded and never compared is the defect the lock
     itself was."""
-    registry = make_registry_with_checksums(tmp_path, {
+    # Only for the zlib.yaml it writes; the registry is built below, after
+    # the recipe has its build system appended.
+    make_registry_with_checksums(tmp_path, {
         "zlib.yaml": {"package": "zlib", "version": "1.3.0",
                       "checksum": "sha256:" + "b" * 64},
     })
@@ -322,6 +324,21 @@ def test_load_refuses_a_lock_that_is_not_yaml(tmp_path):
 
     path = tmp_path / "ebuild.lock"
     path.write_text("lockfile_version: 1\npackages:\n  zlib: {version: '1.2.13\n", encoding="utf-8")
+    with pytest.raises(LockfileError, match="not valid YAML"):
+        Lockfile(path).load()
+
+
+def test_load_refuses_a_lock_that_is_not_utf8(tmp_path):
+    """A 0xff byte fails in the codec, not the parser; the caller must see
+    the same LockfileError, not a UnicodeDecodeError traceback."""
+    from ebuild.packages.lockfile import LockfileError
+
+    path = tmp_path / "ebuild.lock"
+    path.write_bytes(b"packages:\n  zlib: {version: '\xff'}\n")
+    with pytest.raises(LockfileError, match="not valid YAML"):
+        Lockfile(path).load()
+
+    path.write_bytes("packages: {}\n".encode("utf-16"))   # the BOM alone does it
     with pytest.raises(LockfileError, match="not valid YAML"):
         Lockfile(path).load()
 
